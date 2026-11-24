@@ -103,13 +103,14 @@ class BluetoothLink:
         failures = 0
         while True:
             self._set(LinkState.CONNECTING)
-            conn: Connection | None = None
             try:
                 conn = await asyncio.wait_for(self._opener(), CONNECT_TIMEOUT)
-                info = await asyncio.wait_for(self._handshake(conn), HANDSHAKE_TIMEOUT)
-            except (OSError, TimeoutError, ClockLinkError) as err:
-                if conn is not None:
+                try:
+                    info = await asyncio.wait_for(self._handshake(conn), HANDSHAKE_TIMEOUT)
+                except BaseException:
                     conn.close()
+                    raise
+            except (OSError, TimeoutError, ClockLinkError) as err:
                 failures += 1
                 await self._pause(failures, _reason(err))
                 continue

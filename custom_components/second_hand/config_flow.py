@@ -17,6 +17,9 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.selector import (
     EntitySelector,
     EntitySelectorConfig,
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
@@ -28,6 +31,7 @@ from .const import (
     CONF_ADDRESS,
     CONF_ASSIST_DEVICES,
     CONF_HELPERS,
+    CONF_HOUR_CORRECTION,
     CONF_SENSORS,
     ALLOW_TIMERS_ONLY,
     CONF_TIMERS_ONLY,
@@ -240,13 +244,22 @@ class EchoWallClockConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class EchoWallClockOptionsFlow(OptionsFlow):
-    """Change which timers the clock shows."""
+    """Change which timers the clock shows, and the hour correction."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             if _picked_something(user_input):
-                return self.async_create_entry(data=user_input)
+                return self.async_create_entry(
+                    data={**user_input, CONF_HOUR_CORRECTION: int(user_input.get(CONF_HOUR_CORRECTION, 0))}
+                )
             errors["base"] = "nothing_picked"
         current = user_input or dict(self.config_entry.options)
-        return self.async_show_form(step_id="init", data_schema=_timer_schema(self.hass, current), errors=errors)
+        schema = _timer_schema(self.hass, current).extend(
+            {
+                vol.Optional(CONF_HOUR_CORRECTION, default=int(current.get(CONF_HOUR_CORRECTION, 0))): NumberSelector(
+                    NumberSelectorConfig(min=-11, max=11, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="h")
+                ),
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

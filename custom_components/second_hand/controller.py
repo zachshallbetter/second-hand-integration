@@ -43,9 +43,10 @@ class ClockController:
         helpers: list[str],
         link: ClockLink | None = None,
         sensors: list[str] | None = None,
+        hour_correction: int = 0,
     ) -> None:
         self.hass = hass
-        self._reconciler = Reconciler(dt_util.get_default_time_zone())
+        self._reconciler = Reconciler(dt_util.get_default_time_zone(), hour_correction)
         self._assist = AssistTimers(hass, assist_devices, self._changed, self._finished)
         self._helpers = HelperTimers(hass, helpers, self._changed, self._finished)
         self._sensors = SensorTimers(hass, sensors or [], self._changed, self._finished)
@@ -132,6 +133,12 @@ class ClockController:
     @callback
     def resync_time(self) -> None:
         self._send(self._reconciler.resync_time(dt_util.utcnow()))
+
+    @callback
+    def set_hour_correction(self, hours: int) -> None:
+        """Change the hour correction without touching the link to the clock."""
+        now = dt_util.utcnow()
+        self._send(self._reconciler.set_hour_correction(now, self._snapshot(now), hours))
 
     # ------------------------------------------------------------ sources
 

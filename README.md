@@ -95,6 +95,7 @@ Everything stays in your Home Assistant. Second Hand reads your timers and talks
 | **Connected is off** | Check the clock has batteries and nothing else has taken the pairing. After pairing, the first connection can take a few minutes. |
 | The clock is stuck or won't connect | Take a battery out for about 10 seconds, put it back, put the clock in pairing mode again and pair from Home Assistant. |
 | The clock stays blank | Check that the voice assistant, helper or timer sensor that has your timer is picked in the integration's options. |
+| The time is off by whole hours | The hands sit out of step with what the clock thinks they show; a battery change doesn't fix it. Set the hands by hand and press **Sync time**. If you can't move them, set **Hour correction** in the integration's options to the hours to add (for example 6, or -3): Second Hand then shifts the time and every timer it sends to that clock. The clock only turns its hands forward, so lowering the correction sends them the long way round: going back one hour took about 8 minutes. |
 | An Alexa timer shows late or stays after it's cancelled | Second Hand only sees what Alexa Media Player reports. With its push connection working, changes arrive within seconds; without it they wait for its next poll, a minute or more. |
 
 ## 🙏 Credits

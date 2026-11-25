@@ -15,6 +15,7 @@ No `from __future__ import annotations` here: dbus-fast reads the D-Bus signatur
 import asyncio
 from collections.abc import AsyncIterator, Callable
 import contextlib
+import fcntl
 import logging
 import os
 import socket
@@ -41,6 +42,11 @@ AGENT_PATH = "/io/github/second_hand/agent"
 PROFILE_PATH = "/io/github/second_hand/spp"
 CALL_IN_HOLD = 30.0
 """How long to keep a call-in's socket open while the link connects out (the clock waits about a minute)."""
+HCIGETCONNINFO = 0x800448D5  # _IOR('H', 213, int)
+ACL_LINK = 1
+READ_RSSI = 0x1405  # HCI Read RSSI: OGF 0x05 (status parameters), OCF 0x0005
+EVT_CMD_COMPLETE = 0x0E
+HCI_COMMAND_PKT, HCI_EVENT_PKT = 0x01, 0x04
 
 
 class BlueZError(Exception):
@@ -95,6 +101,52 @@ async def open_rfcomm(address: str, adapter_address: str | None = None) -> Rfcom
         sock.close()
         raise
     return RfcommConnection(sock)
+
+
+async def read_rssi(adapter: str, address: str) -> int | None:
+    """The live link's RSSI in dB, or None when there's no link to the clock.
+
+    This is HCI Read RSSI on the connection, not BlueZ's Device1.RSSI (that is only set while searching).
+    0 means inside the radio's ideal receive range; below 0 means weaker than that.
+    """
+    if not hasattr(socket, "BTPROTO_HCI"):
+        return None
+    dev_id = int(adapter.rsplit("hci", 1)[1])
+    try:
+        return await asyncio.get_running_loop().run_in_executor(None, _read_rssi, dev_id, address)
+    except OSError:  # no connection to the clock (ENOTCONN), or the adapter is gone
+        return None
+
+
+def _read_rssi(dev_id: int, address: str) -> int | None:
+    with socket.socket(socket.AF_BLUETOOTH, socket.SOCK_RAW, socket.BTPROTO_HCI) as sock:  # type: ignore[attr-defined]
+        sock.bind((dev_id,))
+        req = conn_info_request(address)
+        fcntl.ioctl(sock, HCIGETCONNINFO, req)
+        handle = struct.unpack_from("<H", req, 8)[0]
+        # Only Command Complete events for Read RSSI (struct hci_filter: packet types, events, opcode).
+        event_filter = struct.pack("<IIIH2x", 1 << HCI_EVENT_PKT, 1 << EVT_CMD_COMPLETE, 0, READ_RSSI)
+        sock.setsockopt(socket.SOL_HCI, socket.HCI_FILTER, event_filter)  # type: ignore[attr-defined]
+        sock.settimeout(2.0)
+        sock.send(struct.pack("<BHBH", HCI_COMMAND_PKT, READ_RSSI, 2, handle))
+        while not is_rssi_reply(packet := sock.recv(260), handle):
+            pass
+        return None if packet[6] else struct.unpack_from("<b", packet, 9)[0]  # status 0 is success
+
+
+def conn_info_request(address: str) -> bytearray:
+    """struct hci_conn_info_req for an ACL link, with room for the hci_conn_info the kernel fills in."""
+    return bytearray(bytes.fromhex(address.replace(":", ""))[::-1] + bytes([ACL_LINK]) + bytes(57))
+
+
+def is_rssi_reply(packet: bytes, handle: int) -> bool:
+    """Whether this is the Command Complete event for Read RSSI on that connection."""
+    return (
+        len(packet) >= 10
+        and packet[0] == HCI_EVENT_PKT
+        and packet[1] == EVT_CMD_COMPLETE
+        and struct.unpack_from("<HxH", packet, 4) == (READ_RSSI, handle)
+    )
 
 
 # ---------------------------------------------------------------- D-Bus objects we export

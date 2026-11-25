@@ -78,6 +78,7 @@ Pairing can take a minute or two the first time: the first connection right afte
 | Entity | What it is |
 |---|---|
 | **Connected** | On while the clock is connected. |
+| **Signal strength** | How strong the clock's Bluetooth link is, in dB, read every minute while connected. 0 is inside the radio's ideal range; lower is weaker. |
 | **Timers** | The timers the clock should show now, with their end times in the attributes. Other integrations and automations can read it. |
 | **Sync time** | Button: sets the clock's time now. |
 

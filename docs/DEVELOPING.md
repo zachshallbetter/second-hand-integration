@@ -2,7 +2,7 @@
 
 ```bash
 uv venv --python 3.14 .venv
-VIRTUAL_ENV=.venv uv pip install pytest-homeassistant-custom-component
+VIRTUAL_ENV=.venv uv pip install pytest-homeassistant-custom-component dbus-fast
 .venv/bin/python -m pytest -q
 ```
 

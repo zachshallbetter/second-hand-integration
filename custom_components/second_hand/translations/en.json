@@ -62,7 +62,11 @@
         "data": {
           "assist_devices": "Voice assistants",
           "helpers": "Timer helpers",
-          "timer_sensors": "Timer sensors (for example Alexa)"
+          "timer_sensors": "Timer sensors (for example Alexa)",
+          "hour_correction": "Hour correction"
+        },
+        "data_description": {
+          "hour_correction": "Leave at 0. If the clock's hour hand stays off by whole hours after Sync time, set the hands by hand; if you can't, enter the hours to add here (for example 6, or -3)."
         }
       }
     },

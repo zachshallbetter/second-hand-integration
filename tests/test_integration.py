@@ -23,6 +23,7 @@ from custom_components.second_hand import protocol
 from custom_components.second_hand.const import (
     CONF_ASSIST_DEVICES,
     CONF_HELPERS,
+    CONF_HOUR_CORRECTION,
     CONF_SENSORS,
     DOMAIN,
     ISSUE_ASSIST_UNSUPPORTED,
@@ -398,6 +399,22 @@ async def test_changing_sources_keeps_the_link(hass: HomeAssistant) -> None:
     await controller.async_stop()
 
 
+async def test_changing_hour_correction_keeps_the_link(hass: HomeAssistant) -> None:
+    ends = dt_util.utcnow() + timedelta(minutes=3)
+    link = FakeLink()
+    controller = ClockController(hass, [], ["timer.tea"], link)
+    await controller.async_start()
+    link.up()
+    hass.states.async_set("timer.tea", "active", {"finishes_at": ends.isoformat()})
+    await _settle(hass)
+    assert link.labels()[2:] == ["SetAlert"]
+    controller.set_hour_correction(6)
+    await _settle(hass)
+    assert controller.connected  # still up, no reconnect
+    assert link.labels()[3:] == ["timeinfo", "SetAlert"]
+    await controller.async_stop()
+
+
 async def test_reconnect_resends_running_timers(hass: HomeAssistant, intent: Any) -> None:
     sat = Satellite(hass, "Kitchen")
     link = FakeLink()
@@ -468,6 +485,15 @@ async def test_config_flow_and_sensor(hass: HomeAssistant, intent: Any) -> None:
     )
     await _settle(hass)
     assert hass.states.get("sensor.kitchen_clock_timers").state == "1"
+
+    # Options: the hour correction is stored as a whole number of hours.
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_HELPERS: ["timer.tea"], CONF_HOUR_CORRECTION: 6.0}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert entry.options[CONF_HOUR_CORRECTION] == 6
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     assert type(intent.handlers) is dict

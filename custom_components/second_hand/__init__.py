@@ -7,7 +7,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .const import CONF_ADAPTER, CONF_ADDRESS, CONF_ASSIST_DEVICES, CONF_HELPERS, CONF_SENSORS
+from .const import CONF_ADAPTER, CONF_ADDRESS, CONF_ASSIST_DEVICES, CONF_HELPERS, CONF_HOUR_CORRECTION, CONF_SENSORS
 from .controller import ClockController
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.SENSOR]
@@ -21,6 +21,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EchoWallClockConfigEntry
         list(entry.options.get(CONF_ASSIST_DEVICES, [])),
         list(entry.options.get(CONF_HELPERS, [])),
         sensors=list(entry.options.get(CONF_SENSORS, [])),
+        hour_correction=int(entry.options.get(CONF_HOUR_CORRECTION, 0)),
     )
     stop_call_ins = None
     if address := entry.data.get(CONF_ADDRESS):
@@ -84,9 +85,10 @@ async def async_remove_entry(hass: HomeAssistant, entry: EchoWallClockConfigEntr
 
 
 async def _options_updated(hass: HomeAssistant, entry: EchoWallClockConfigEntry) -> None:
-    """Swap the timer sources in place: a reload would drop the Bluetooth link for over a minute."""
+    """Swap the timer sources and hour correction in place: a reload would drop the Bluetooth link for over a minute."""
     entry.runtime_data.update_sources(
         list(entry.options.get(CONF_ASSIST_DEVICES, [])),
         list(entry.options.get(CONF_HELPERS, [])),
         list(entry.options.get(CONF_SENSORS, [])),
     )
+    entry.runtime_data.set_hour_correction(int(entry.options.get(CONF_HOUR_CORRECTION, 0)))

@@ -211,6 +211,37 @@ def test_manual_resync() -> None:
     assert labels(r.resync_time(T0 + s(5))) == ["timeinfo"]
 
 
+def test_hour_correction_shifts_time_and_timer_ends() -> None:
+    r = Reconciler(NY, hour_correction=6)
+    cmds = r.on_connected(T0, timers(running(A, T0 + s(91))))
+    assert labels(cmds) == ["timeinfo", "ClearIndicator", "SetAlert TIMER"]
+    assert cmds[0].payload == protocol.time_info("2026-10-14T18:00:00-04:00")
+    assert cmds[2].payload == protocol.set_timer(protocol.alert_token(A), "2026-10-14T18:01:31-04:00")
+
+
+def test_hour_correction_does_not_move_the_half_hour_schedule() -> None:
+    r = Reconciler(NY, hour_correction=-3)
+    r.on_connected(T0 + timedelta(minutes=10), {})
+    assert r.next_due() == T0 + timedelta(minutes=30)
+    cmds = r.tick(T0 + timedelta(minutes=30))
+    assert cmds == [Command("timeinfo", protocol.time_info("2026-10-14T09:30:00-04:00"))]
+
+
+def test_changing_hour_correction_resends_time_and_shown_timers() -> None:
+    r = connected(snapshot=timers(running(A, T0 + s(120))))
+    cmds = r.set_hour_correction(T0 + s(5), timers(running(A, T0 + s(120))), 6)
+    assert labels(cmds) == ["timeinfo", "SetAlert TIMER"]
+    assert cmds[0].payload == protocol.time_info("2026-10-14T18:00:05-04:00")
+    assert cmds[1].payload == protocol.set_timer(protocol.alert_token(A), "2026-10-14T18:02:00-04:00")
+    assert r.update(T0 + s(6), timers(running(A, T0 + s(120)))) == []
+
+
+def test_hour_correction_while_disconnected_sends_nothing_and_applies_on_connect() -> None:
+    r = Reconciler(NY)
+    assert r.set_hour_correction(T0, {}, 2) == []
+    assert r.on_connected(T0, {})[0].payload == protocol.time_info("2026-10-14T14:00:00-04:00")
+
+
 def test_finish_for_an_unseen_timer_still_pulses() -> None:
     r = connected()
     r.on_finished(T0, "assist:late")

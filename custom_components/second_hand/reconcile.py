@@ -67,8 +67,9 @@ class Command(NamedTuple):
 class Reconciler:
     """Turns desired-state snapshots into clock commands."""
 
-    def __init__(self, zone: tzinfo) -> None:
+    def __init__(self, zone: tzinfo, hour_correction: int = 0) -> None:
         self._zone = zone
+        self._correction = timedelta(hours=hour_correction)
         self._connected = False
         self._shown: dict[str, datetime] = {}  # key -> end time the clock was told
         self._ring_due: dict[str, datetime] = {}  # key -> when to send timers=active
@@ -152,12 +153,27 @@ class Reconciler:
         """Send timeinfo now (for example after a DST change or on request)."""
         return [self._time_info(now)] if self._connected else []
 
+    def set_hour_correction(self, now: datetime, timers: Mapping[str, ClockTimer], hours: int) -> list[Command]:
+        """Shift every time sent to the clock by whole hours, for a clock whose hands sit off by that much.
+
+        Resends the time and every shown timer, so the hands and the timer lights move together.
+        """
+        self._correction = timedelta(hours=hours)
+        if not self._connected:
+            return []
+        self._shown.clear()
+        return [self._time_info(now), *self.update(now, timers)]
+
     def _set_alert(self, key: str, ends_at: datetime) -> Command:
-        end = protocol.clock_time(ends_at.astimezone(self._zone))
+        end = self._clock_time(ends_at)
         return Command("SetAlert TIMER", protocol.set_timer(protocol.alert_token(key), end))
 
     def _time_info(self, now: datetime) -> Command:
-        return Command("timeinfo", protocol.time_info(protocol.clock_time(now.astimezone(self._zone))))
+        return Command("timeinfo", protocol.time_info(self._clock_time(now)))
+
+    def _clock_time(self, when: datetime) -> str:
+        """The clock's digits for `when`: local time, plus the hour correction."""
+        return protocol.clock_time((when + self._correction).astimezone(self._zone))
 
     def _next_half_hour(self, now: datetime) -> datetime:
         """The next :00 or :30 of local time after now, in UTC.

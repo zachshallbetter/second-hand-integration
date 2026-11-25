@@ -74,6 +74,9 @@
     "sensor": {
       "timers": {
         "name": "Timers"
+      },
+      "signal_strength": {
+        "name": "Signal strength"
       }
     },
     "binary_sensor": {

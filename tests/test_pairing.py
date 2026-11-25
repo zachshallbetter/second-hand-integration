@@ -13,6 +13,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.entity_component import async_update_entity
 from homeassistant.setup import async_setup_component
 
 from custom_components.second_hand import link as link_mod, protocol as p
@@ -168,6 +169,7 @@ async def test_no_bluetooth_offers_timers_only(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
     assert hass.states.get("sensor.kitchen_clock_timers") is not None
     assert hass.states.get("binary_sensor.kitchen_clock_connected") is None  # nothing to connect to
+    assert hass.states.get("sensor.kitchen_clock_signal_strength") is None
 
 
 class FakeBlueZ:
@@ -220,9 +222,14 @@ async def test_paired_clock_end_to_end(hass: HomeAssistant, monkeypatch: pytest.
         options={CONF_ASSIST_DEVICES: [], CONF_HELPERS: ["timer.tea"]},
     )
     entry.add_to_hass(hass)
+    async def read_rssi(adapter: str, address: str) -> int | None:
+        assert (adapter, address) == (ADAPTER, CLOCK)
+        return -38
+
     with (
         patch("custom_components.second_hand.bluez.BlueZ", FakeBlueZ),
         patch("custom_components.second_hand.bluez.open_rfcomm", open_rfcomm),
+        patch("custom_components.second_hand.bluez.read_rssi", read_rssi),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
@@ -238,6 +245,11 @@ async def test_paired_clock_end_to_end(hass: HomeAssistant, monkeypatch: pytest.
         device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
         assert device.sw_version == "102"
         assert (dr.CONNECTION_BLUETOOTH, CLOCK) in device.connections
+
+        # Signal strength reads the live link.
+        await async_update_entity(hass, "sensor.kitchen_clock_signal_strength")
+        signal = hass.states.get("sensor.kitchen_clock_signal_strength")
+        assert (signal.state, signal.attributes["unit_of_measurement"]) == ("-38", "dB")
 
         # A helper timer goes to the clock.
         hass.states.async_set("timer.tea", "active", {"finishes_at": "2099-01-01T00:00:00+00:00"})
@@ -255,6 +267,7 @@ async def test_paired_clock_end_to_end(hass: HomeAssistant, monkeypatch: pytest.
         await asyncio.sleep(0.01)
         await hass.async_block_till_done()
         assert hass.states.get("binary_sensor.kitchen_clock_connected").state == "off"
+        assert hass.states.get("sensor.kitchen_clock_signal_strength").state == "unavailable"
         for _ in range(100):
             if clock.received.count("Discover") == 2 and clock.received[-1] == "SetAlert":
                 break
@@ -288,3 +301,17 @@ def test_clock_names_include_the_mickey_mouse_edition():
     assert is_clock_name("EWCMickeyMouse05B")
     assert not is_clock_name("JBL Flip 5")
     assert not is_clock_name("")
+
+
+def test_read_rssi_request_and_reply():
+    from custom_components.second_hand.bluez import conn_info_request, is_rssi_reply
+
+    req = conn_info_request("AA:BB:CC:DD:EE:01")
+    assert req[:7] == bytes([0x01, 0xEE, 0xDD, 0xCC, 0xBB, 0xAA, 0x01])  # bdaddr little-endian, then ACL
+    assert len(req) == 64
+    # Command Complete for Read RSSI on handle 0x000C: status 0, RSSI -38.
+    reply = bytes([0x04, 0x0E, 0x07, 0x01, 0x05, 0x14, 0x00, 0x0C, 0x00, 0xDA])
+    assert is_rssi_reply(reply, 0x000C)
+    assert not is_rssi_reply(reply, 0x000D)  # another connection
+    assert not is_rssi_reply(bytes([0x04, 0x0E, 0x07, 0x01, 0x06, 0x14, 0x00, 0x0C, 0x00, 0xDA]), 0x000C)  # another command
+    assert not is_rssi_reply(reply[:9], 0x000C)
